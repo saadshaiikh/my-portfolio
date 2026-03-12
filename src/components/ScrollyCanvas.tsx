@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
 
 import { getCanvasSize, prepareCanvas, drawImageCover } from "@/lib/canvas";
@@ -22,6 +22,7 @@ export default function ScrollyCanvas({ className }: ScrollyCanvasProps): ReactE
   const firstFrameDrawnRef = useRef(false);
   const sizeRef = useRef(getCanvasSize());
   const metricsRef = useRef({ top: 0, height: 0, maxScroll: 1 });
+  const [hasSequence, setHasSequence] = useState(true);
 
   const frames = useMemo(
     () =>
@@ -83,6 +84,9 @@ export default function ScrollyCanvas({ className }: ScrollyCanvasProps): ReactE
   };
 
   const drawFrame = (targetIndex: number, force = false) => {
+    if (!hasSequence) {
+      return;
+    }
     const canvas = canvasRef.current;
     if (!canvas) {
       return;
@@ -137,6 +141,9 @@ export default function ScrollyCanvas({ className }: ScrollyCanvasProps): ReactE
   };
 
   const updateFrameFromScroll = (force = false) => {
+    if (!hasSequence) {
+      return;
+    }
     const { top, maxScroll } = metricsRef.current;
     const scrollY = window.scrollY || window.pageYOffset;
     const progress = clamp((scrollY - top) / maxScroll, 0, 1);
@@ -155,6 +162,8 @@ export default function ScrollyCanvas({ className }: ScrollyCanvasProps): ReactE
 
     imagesRef.current = images;
     loadedRef.current = new Array(images.length).fill(false);
+    let resolvedCount = 0;
+    let successCount = 0;
 
     images.forEach((image, index) => {
       const handleLoad = async (success: boolean) => {
@@ -167,11 +176,19 @@ export default function ScrollyCanvas({ className }: ScrollyCanvasProps): ReactE
         }
 
         loadedRef.current[index] = success;
+        if (success) {
+          successCount += 1;
+        }
+        resolvedCount += 1;
         if (success && index === 0 && !firstFrameDrawnRef.current) {
           firstFrameDrawnRef.current = true;
           drawFrame(0);
         } else {
           updateFrameFromScroll(true);
+        }
+
+        if (resolvedCount === images.length && successCount === 0) {
+          setHasSequence(false);
         }
       };
 
@@ -196,6 +213,9 @@ export default function ScrollyCanvas({ className }: ScrollyCanvasProps): ReactE
   }, [frames]);
 
   useEffect(() => {
+    if (!hasSequence) {
+      return;
+    }
     const handleResize = () => {
       updateMetrics();
       updateFrameFromScroll(true);
@@ -223,26 +243,38 @@ export default function ScrollyCanvas({ className }: ScrollyCanvasProps): ReactE
         window.cancelAnimationFrame(rafRef.current);
       }
     };
-  }, [frames]);
+  }, [frames, hasSequence]);
 
   const rootClassName = ["scrolly-canvas", "bg-[#121212]", className].filter(Boolean).join(" ");
+  const fallbackStyle = {
+    backgroundImage:
+      "radial-gradient(1200px 800px at 18% 20%, rgba(37, 99, 235, 0.28), transparent 60%), radial-gradient(900px 700px at 82% 28%, rgba(16, 185, 129, 0.22), transparent 55%), linear-gradient(180deg, rgba(8, 8, 8, 0.95), rgba(12, 12, 12, 0.98))",
+  };
 
   return (
     <div className={rootClassName} ref={containerRef} style={{ position: "relative", height: "500vh" }}>
       <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 h-10 bg-gradient-to-b from-black/90 via-black/40 to-transparent" />
       <Overlay scrollTarget={containerRef} className="absolute inset-0 z-20" />
-      <canvas
-        ref={canvasRef}
-        style={{
-          position: "sticky",
-          top: 0,
-          left: 0,
-          width: "100%",
-          height: "100vh",
-          display: "block",
-          backgroundColor: "#121212",
-        }}
-      />
+      {hasSequence ? (
+        <canvas
+          ref={canvasRef}
+          style={{
+            position: "sticky",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100vh",
+            display: "block",
+            backgroundColor: "#121212",
+          }}
+        />
+      ) : (
+        <div
+          aria-hidden
+          className="sticky top-0 h-screen w-full"
+          style={fallbackStyle}
+        />
+      )}
     </div>
   );
 }
